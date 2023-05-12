@@ -1,0 +1,1302 @@
+#region Using declarations
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Xml.Serialization;
+using NinjaTrader.Cbi;
+using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
+using NinjaTrader.Gui.SuperDom;
+using NinjaTrader.Gui.Tools;
+using NinjaTrader.Data;
+using NinjaTrader.NinjaScript;
+using NinjaTrader.Core.FloatingPoint;
+using NinjaTrader.NinjaScript.Indicators;
+using NinjaTrader.NinjaScript.Indicators.TDU;
+using NinjaTrader.NinjaScript.DrawingTools;
+#endregion
+
+//This namespace holds Strategies in this folder and is required. Do not change it. 
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public class SecEntryStrat : Strategy
+    {
+		public override string DisplayName{ get{ return "Bounce Second Entry Strat";}}
+        #region Reversal Pattern
+		
+		private TDUPriceAction _patsIndicator;
+		private StochasticsFast StochasticsFast1;
+		private ChoppinessIndex Chop;
+	    private ATR atrIndicator;
+		private CurrentDayOHL currentSHigh;
+        private CurrentDayOHL currentSLow;
+		private Series<double> slLong;
+		private Series<double> slShort;
+		private Series<double> slLongMinMax;
+		private Series<double> slShortMinMax;
+//		private Series<double> signalBarStrengthLong;
+//		private Series<double> signalBarStrengthShort;
+//		private Series<double> trapLong;
+//		private Series<double> trapShort;
+		private double takeProfitATR;
+		private double signalEntryLong;
+		private double signalEntryShort;
+		private EMA bounceEMA;
+		private EMA filterEMA;
+		private EMA abovebelowEMA;
+		private Chart chartWindow;
+        private System.Windows.Controls.Button btnLongsOn;
+        private System.Windows.Controls.Button btnShortsOn;
+        private System.Windows.Controls.Button btnCloseAll;
+        private bool IsToolBarButtonAdded;
+		private bool longsOn = true;
+        private bool shortsOn = true;
+		
+        private double percentageCalc;
+        private double priceCalc;
+        private double tickCalc;
+        private double candleBarOffset;
+
+        private bool current2EBuy;
+        private bool current2ESell;
+
+        #endregion
+
+        #region entry Offset
+
+        private double entryAreaLong;
+        private double entryAreaShort;
+
+//        private double percentageCalcEntry;
+//        private double priceCalcEntry;
+//        private double tickCalcEntry;
+//        private double candleBarOffsetEntry;
+
+//        private double enterLong;
+//        private double enterShort;
+
+        #endregion
+
+        #region stop Offset
+
+        private double stopAreaLong;
+        private double stopAreaShort;
+
+
+        #endregion
+
+        #region Breakeven 
+
+        private double breakevenTriggerLong;
+        private double breakevenTriggerShort;
+
+        private bool myFreeBELong;
+        private bool myFreeBEShort;
+
+        private double breakevenLong;
+        private double breakevenShort;
+
+        #endregion
+
+        #region Trail Stop
+
+        private double trailAreaLong;
+        private double trailAreaShort;
+
+        private double trailLong;
+        private double trailShort;
+
+        private double trailTriggerLong;
+        private double trailTriggerShort;
+
+        private bool myFreeTrail;
+
+
+        private bool trailTriggeredCandle;
+        #endregion
+
+        #region Trade Limits
+
+        private bool countOnce;
+        private int currentCount;
+
+        private double totalPnL;
+
+        private double cumPnL;
+        private double dailyPnL;
+
+        #endregion
+
+        private bool myTradeLong;
+        private bool myTradeShort;
+
+        #region Trading Habitually 
+
+        private string author = "Trading Habitually LLC";
+        private string version = "Version 1.3";
+
+        #endregion
+
+        protected override void OnStateChange()
+        {
+            if (State == State.SetDefaults)
+            {
+                Description = @"Second Entries Strategy";
+                Name = "SecEntryStrat";
+                Calculate = Calculate.OnEachTick;
+                EntriesPerDirection = 1;
+                EntryHandling = EntryHandling.AllEntries;
+                IsExitOnSessionCloseStrategy = true;
+                ExitOnSessionCloseSeconds = 30;
+                IsFillLimitOnTouch = false;
+                MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
+                OrderFillResolution = OrderFillResolution.Standard;
+                Slippage = 0;
+                StartBehavior = StartBehavior.WaitUntilFlat;
+                TimeInForce = TimeInForce.Gtc;
+                TraceOrders = false;
+                RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
+                StopTargetHandling = StopTargetHandling.PerEntryExecution;
+                BarsRequiredToTrade = 5;
+                // Disable this property for performance gains in Strategy Analyzer optimizations
+                // See the Help Guide for additional information
+                IsInstantiatedOnEachOptimizationIteration = true;
+
+                #region Default Settings
+				
+				
+				UseTPByATR = true;
+				ATRPeriod = 14;
+				All2Entries = false;
+//				ProfitTarget = 25;
+//				PositionSize = 1;
+				BounceEMAPeriod	= 13;
+				FilterEMAPeriod	= 34;
+				AboveBelowEMAPeriod	= 55;
+				UseFilterEMA = false;
+				UseBounceOnly = true;
+				BarRisk = false;
+				IsEMARisingFalling = false;
+				LimitRisk = 10;
+				StopLossOffset = 2;
+				slMinMax2 = true;;
+				EntryOffSet = 2;
+				DistEMAToSignal = 15;
+				Dist2EMAs = 10;
+				DistanceEMAFilter = false;
+				EntryOnlyAboveBelowEMA = false;
+				Start = DateTime.Parse("08:35", System.Globalization.CultureInfo.InvariantCulture);
+                End = DateTime.Parse("15:00", System.Globalization.CultureInfo.InvariantCulture);
+	
+                TickOffsetTrail = 1;
+                TrailTriggerAmount = 20;
+
+                //Breakeven
+                BreakevenTriggerAmount = 10;
+
+                //Daily Limits
+                DailyProfitLimit = 2000;
+                DailyLossLimit = 2000;
+                X = 50;
+
+                //Position Size
+                PositionSize = 1;
+                ProfitTargetTicks = 50;
+				StopLossTicks = 50;
+
+                //User Option to set the following
+                FixedStopLoss = false;
+				DynamicStopLoss = true;
+                ProfitTarget = false;
+                SetBreakeven = false;
+                SetTrail = false;
+				OHLFilter = true;
+              
+                countOnce = true;
+
+                //Prints to Output
+                SystemPrint = true;
+ 
+                #endregion
+
+            }
+            else if (State == State.Configure)
+            {
+            }
+
+         
+           
+            //Not part of the strategy.
+
+            else if (State == State.DataLoaded)
+            {
+                ClearOutputWindow(); //Clears Output window every time strategy is enabled
+				_patsIndicator = TDUPriceAction(Close, TDUPatsRules.Mack, false,
+					TDUPatsTradeManagement.Internal,0, 2, 95, 2, TDUPATSPositionSizing.Contracts, 1, 200, 1, 1, 
+					TDUPATSPositionSizingRunner.None, 1, 1, 1, 1, "tkaboris@gmail.com", 5575298285767);
+				_patsIndicator.Show01 = true;
+				_patsIndicator.ShowTraps = false;
+				_patsIndicator.ShowSLTP = true;
+				AddChartIndicator(_patsIndicator);
+				StochasticsFast1 = StochasticsFast(3, 14); 
+				Chop = ChoppinessIndex(14);
+				slShort = new Series<double>(this);
+				slLong = new Series<double>(this);
+				slShortMinMax = new Series<double>(this);
+				slLongMinMax = new Series<double>(this);
+//				signalBarStrengthShort = new Series<double>(this);
+//				signalBarStrengthLong = new Series<double>(this);
+//				trapShort = new Series<double>(this);
+//				trapLong = new Series<double>(this);
+				atrIndicator  = ATR(ATRPeriod);
+				bounceEMA	= EMA(BounceEMAPeriod);
+				filterEMA	= EMA(FilterEMAPeriod);
+				abovebelowEMA	= EMA(AboveBelowEMAPeriod);
+				 currentSHigh = CurrentDayOHL(Close);
+                currentSLow = CurrentDayOHL(Close);
+            }
+			
+			else if (State == State.Realtime)
+            {
+                if (ChartControl != null && !IsToolBarButtonAdded)
+                {
+                    var unused1 = ChartControl.Dispatcher.InvokeAsync(() =>
+                    {
+                        AddButtonToToolbar();
+                    });
+                }
+            }
+            else if (State == State.Terminated)
+            {
+                if (chartWindow != null)
+                {
+                    var unused = ChartControl.Dispatcher.InvokeAsync(() =>
+                    {
+                        DisposeCleanUp();
+                    });
+                }
+            }
+        }
+
+
+        protected override void OnPositionUpdate(Cbi.Position position, double averagePrice,
+            int quantity, Cbi.MarketPosition marketPosition)
+        {
+            #region CurrentCount
+
+            if (Position.Quantity == PositionSize)
+            {
+                currentCount++; //Adds +1 to your currentCount every time a position is filled
+
+                if (SystemPrint)
+                {
+                    if (SystemPrint)
+                    {
+                        Print("Current Trade Count " + currentCount + " " + Time[1]);
+                    }
+                }
+            }
+
+            #endregion
+
+            #region Trail Stop Cancel
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                myFreeTrail = false; //Once the position is exited, cancel calculations for trail stop <<Typo here
+
+                if (SystemPrint)
+                {
+                    if (SystemPrint)
+                    {
+                        Print("myFree Trail ON Position " + myFreeTrail + " " + Time[1]);
+                    }
+                }
+
+            }
+
+            #endregion
+
+            #region Daily PNL
+
+            if (Position.MarketPosition == MarketPosition.Flat && SystemPerformance.AllTrades.Count > 0)
+            {
+                totalPnL = SystemPerformance.RealTimeTrades.TradesPerformance.Currency.CumProfit; ///Double that sets the total PnL 
+
+                dailyPnL = (totalPnL) - (cumPnL); ///Your daily limit is the difference between these
+
+
+                if (SystemPrint)
+                {
+                    if (SystemPrint)
+                    {
+                        Print("Current PNL Realized >> " + totalPnL + " << " + Time[0]);
+
+                        Print("Cumulative PNL >> " + cumPnL + " << " + Time[0]);
+                        Print("Daily PNL >> " + dailyPnL + " << " + Time[0]);
+                    }
+                }
+
+
+                if (dailyPnL <= -DailyLossLimit) //Print this when daily Pnl is under Loss Limit
+                {
+                    if (SystemPrint)
+                    {
+                        if (SystemPrint)
+                        {
+                            Print("Daily Loss of " + DailyLossLimit + " has been hit. No More Entries! Daily PnL >> " + dailyPnL + " <<" + Time[0]);
+                        }
+                    }
+
+                }
+
+
+                if (dailyPnL >= DailyProfitLimit) //Print this when daily Pnl is above Profit limit
+                {
+                    if (SystemPrint)
+                    {
+                        if (SystemPrint)
+                        {
+                            Print("Daily Profit of " + DailyProfitLimit + " has been hit. No more Entries! Daily PnL >>" + dailyPnL + " <<" + Time[0]);
+                        }
+                    }
+                }
+
+            }
+            #endregion
+        }
+
+
+        protected override void OnBarUpdate()
+        {
+            
+//			_patsIndicator.Update();
+			if (CurrentBar < 4) return;
+			if (BarsInProgress!=0) return;
+//			slShort[0] = _patsIndicator.StopLossShort[0];
+//			slLong[0] = _patsIndicator.StopLossLong[0];
+			slShort[0] = High[1] + (StopLossOffset * TickSize);
+			slLong[0] = Low[1] - (StopLossOffset * TickSize); 
+			
+			slShortMinMax[0] = (Math.Max(High[1], High[0])) + (StopLossOffset * TickSize);
+			slLongMinMax[0] = (Math.Min(Low[1], Low[0])) - (StopLossOffset * TickSize); 
+			
+			signalEntryLong =  (High[1] + 1 * TickSize);
+			signalEntryShort = (Low[1] - 1 * TickSize);
+//			signalBarStrengthLong[0] = _patsIndicator.SignalBarStrengthLong[0];
+//			signalBarStrengthShort[0] = _patsIndicator.SignalBarStrengthShort[0];
+//			entryLong = (_patsIndicator.SignalLong[0]).ApproxCompare(2) == 0;
+//			entryShort = (_patsIndicator.SignalShort[0]).ApproxCompare(-2) == -0;
+
+			double atrvalue = atrIndicator[0];
+			double tpByATR = Math.Round(atrvalue/TickSize);
+			double barSize = (High[0] - Low[0]) / TickSize;
+			double risk = Math.Abs(High[1] - Low[1]) + StopLossOffset * TickSize;
+			double distEmaToLongSignal = Math.Abs(High[1] - bounceEMA[0])/ TickSize;
+			double distEmaToShortSignal = Math.Abs(bounceEMA[0] - Low[1])/ TickSize;
+			double distBetween2Emas = Math.Abs(bounceEMA[0] -  filterEMA[0]) ;
+			
+			
+			
+			
+			#region if Return
+
+
+            if (State != State.Realtime) //Only trades realtime. Ignores historical trades.
+            {
+                return;
+            }
+
+
+            if (CurrentBars[0] < 2) //Need more than 2 bars to trade
+            {
+                return;
+            }
+
+
+            if (Bars.IsFirstBarOfSession && IsFirstTickOfBar)
+            {
+                currentCount = 0; ///Resets amount of trades you can take in a day
+
+
+                cumPnL = totalPnL; ///Double that copies the full session PnL (If trading multiple days). Is only calculated once per day.
+				dailyPnL = totalPnL - cumPnL; ///Subtract the copy of the full session by the full session PnL. This resets your daily PnL back to 0.
+
+
+                if (SystemPrint)
+                {
+                    if (SystemPrint)
+                    {
+                        Print("currentCount First Bar " + currentCount + " " + Time[0]);
+                    }
+
+                    if (SystemPrint)
+                    {
+                        Print("totalPnL First Bar " + totalPnL + " " + Time[0]);
+                        Print("cumPnL First Bar " + cumPnL + " " + Time[0]);
+
+                        Print("dailyPnL First Bar " + dailyPnL + " " + Time[0]);
+                    }
+                }
+
+            }
+
+
+            if (Bars.BarsSinceNewTradingDay < 1) //Needs more than 1 bar on new day to begin trading. (Prevents trades if previous day closed as a pattern for our entry)
+            {
+                return;
+            }
+
+            #endregion
+
+            if (countOnce)
+            {
+
+  
+                if ((Position.MarketPosition == MarketPosition.Flat) && (current2EBuy || current2ESell))
+                {
+                    #region Entry Offset
+
+                    //Define what area you are entering (If it is based on the chart)
+                    entryAreaLong = High[1];
+                    entryAreaShort = Low[1];
+
+                    #region Entry Prints
+
+                    if (SystemPrint)
+                    {
+                        if (SystemPrint)
+                        {
+//                            Print("percentageCalcEntry " + percentageCalcEntry + " " + Time[1]);
+//                            Print("priceCalcEntry " + priceCalcEntry + " " + Time[1]);
+//                            Print("tickCalcEntry " + tickCalcEntry + " " + Time[1]);
+
+//                            Print("candleBarOffsetEntry" + candleBarOffsetEntry + " " + Time[1]);
+
+                        }
+                    }
+                    #endregion
+
+                    #endregion
+
+                    #region Stop Offset
+
+                    stopAreaLong = Low[1];
+                    stopAreaShort = High[1];
+
+                    #endregion
+                }
+
+                countOnce = false; //Sets bool countOnce back to false. Needs to wait until new bar to make calculations again.
+
+            }
+
+
+            if (IsFirstTickOfBar)
+            {
+                countOnce = true; //Sets bool countOnce back to true. Allows Calculations to be made again.
+
+                #region Trail Stop new bar Update
+
+                //If the strategy is in a position. This allows the trail stop to keep making calculations and continue moving every new candle
+                if (Position.MarketPosition != MarketPosition.Flat)
+                {
+                    myFreeTrail = true;
+
+
+                    if (SystemPrint)
+                    {
+                       
+                        Print("myFree Trail First Tick " + myFreeTrail + " " + Time[1]);                    
+
+                    }
+
+                }
+
+                #endregion
+            }
+
+           Print("Current Risk: " + risk);
+			
+			if (longsOn) ///These have been added as a request - Will explain in Pt.3 Video
+			{
+                #region Long Trade
+
+                if( 
+				(Position.MarketPosition == MarketPosition.Flat) 
+//				&& (_patsIndicator.TrapLong[0].ApproxCompare(1)==0)
+				&& (_patsIndicator.SignalLong[0].ApproxCompare(2) == 0) 				
+				&& !(_patsIndicator.SignalLong[0].ApproxCompare(1) == 0)
+				&& ((Time[1].TimeOfDay >= Start.TimeOfDay) && (Time[1].TimeOfDay <= End.TimeOfDay))
+				&& (BarsSinceExitExecution("SLL") > 1 || BarsSinceExitExecution("SLL") == -1) 
+                && (BarsSinceExitExecution("PTL") > 1 || BarsSinceExitExecution("PTL") == -1) 			
+				
+				&& ((UseBounceOnly) ? (signalEntryLong >= bounceEMA[0]) 
+				&& (Math.Min(Low[1], Low[0]) <= bounceEMA[0]) && (High[0] > bounceEMA[0])
+//				&& (Low[0] <= bounceEMA[0]) && (High[0] > bounceEMA[0])		
+				&& High[0] > High[1] + EntryOffSet * TickSize
+				&& (distEmaToLongSignal <= DistEMAToSignal)
+				&& (risk <= LimitRisk) : Close[0] > 0)
+					
+				&& ((OHLFilter) ? (High[1] < CurrentDayOHL().CurrentHigh[1] - 50 * TickSize) : Close[0] > 0)
+				&& ((UseFilterEMA) ? (bounceEMA[0] > filterEMA[0]) : Close[0] > 0)
+				&& ((EntryOnlyAboveBelowEMA) ? (Close[0] > abovebelowEMA[0]) : Close[0] > 0)	
+				&& ((IsEMARisingFalling) ? (bounceEMA[0] > bounceEMA[1]) : Close[0] > 0)
+				&& ((IsStochFilter) ? (StochasticsFast1.D[0] <= 70) && (StochasticsFast1.D[0] >= 1) : Close[0] > 0)
+				&& ((DistanceEMAFilter) ? (distBetween2Emas >= Dist2EMAs) : Close[0] > 0)
+				&& ((IsChopFilter) ? (Chop[0] <= 50)  : Close[0] > 0)
+				
+				&& ((All2Entries) ? 
+				(Position.MarketPosition == MarketPosition.Flat) 
+				&& (_patsIndicator.SignalLong[0].ApproxCompare(2) == 0) 				
+				&& !(_patsIndicator.SignalLong[0].ApproxCompare(1) == 0)
+				&& ((IsEMARisingFalling) ? (bounceEMA[0] > bounceEMA[1]) : Close[0] > 0)
+				&& ((IsStochFilter) ? (StochasticsFast1.D[0] <= 70) && (StochasticsFast1.D[0] >= 1) : Close[0] > 0)
+				&& ((DistanceEMAFilter) ? (distBetween2Emas >= Dist2EMAs) : Close[0] > 0)
+				&& ((UseFilterEMA) ? (bounceEMA[0] > filterEMA[0]) : Close[0] > 0)
+				&& ((EntryOnlyAboveBelowEMA) ? (Close[0] > abovebelowEMA[0]) : Close[0] > 0)	
+					
+				&& ((IsChopFilter) ? (Chop[0] <= 50)  : Close[0] > 0)
+				&& ((Time[1].TimeOfDay >= Start.TimeOfDay) && (Time[1].TimeOfDay <= End.TimeOfDay))
+				&& (BarsSinceExitExecution("SLL") > 1 || BarsSinceExitExecution("SLL") == -1) 
+                && (BarsSinceExitExecution("PTL") > 1 || BarsSinceExitExecution("PTL") == -1) : Close[0] > 0) 	
+				&& (currentCount < X) && (dailyPnL > -DailyLossLimit) 
+                && (dailyPnL < DailyProfitLimit) 
+					)
+					
+
+                {
+					
+                    EnterLong(PositionSize, "2EL"); 
+					current2EBuy = true;
+                    myTradeLong = true;
+					 
+					if (SystemPrint)
+                    {                      
+                        Print("Entering Long: "  + " " + Time[1] + "- " + CurrentBar);
+						Print("Stop Level Long" + slLong[0] + " " + Time[1]);                       
+						Print("My Trade Long"+ myTradeLong  + CurrentBar);
+						Print("Current Risk : " + " " + risk);
+						Print("Stoch D value : " + " " +StochasticsFast1.D[0]);
+						Print("Chop value : " + " " +Chop[0]);
+						Print("Distance between EMAs"+distBetween2Emas);
+                       
+                    }
+					
+                }
+				
+
+                #region Long Stop and Profit
+
+                if (Position.MarketPosition == MarketPosition.Long && myTradeLong == true)
+                {
+                    if (FixedStopLoss)
+                    {
+                        ExitLongStopMarket(0, true, Position.Quantity, StopLossTicks, "SLL", "2EL"); 
+                    }
+					
+					if (DynamicStopLoss)
+						if (slMinMax2) {
+							ExitLongStopMarket(0, true, Position.Quantity, slLongMinMax[0], "SLL", "2EL"); 
+						}
+						else
+                    {
+                        ExitLongStopMarket(0, true, Position.Quantity, slLong[0], "SLL", "2EL"); 
+                    }
+					
+					
+
+                    if (ProfitTarget)
+                    {
+                        ExitLongLimit(0, true, Position.Quantity, Position.AveragePrice + (TickSize * ProfitTargetTicks), "PTL", "2EL"); //Sets Profit at (Ticks) above entry fill price
+                    }
+					
+					if (UseTPByATR)
+                    {
+                        ExitLongLimit(0, true, Position.Quantity, Position.AveragePrice + (TickSize * tpByATR), "PTL", "2EL"); //Sets Profit at (Ticks) above entry fill price
+                    }
+
+                    breakevenTriggerLong = Position.AveragePrice + (TickSize * BreakevenTriggerAmount); //Define the target in which your Breakeven will trigger. (Fill Price + Ticks)
+                    myFreeBELong = true; //Activates Breakeven. You will be a ble to move the stop around after.
+					Print("myFreeBELong"+ myFreeBELong + CurrentBar);
+                    trailTriggerLong = Position.AveragePrice + (TickSize * TrailTriggerAmount); //Define the target in which your trail stop will trigger. (Fill Price + Ticks)
+                    myFreeTrail = true; //Activates Trail Stop. You will be a ble to move the stop around after it is set.
+					
+						Print("MyFreeTrail"+ myFreeTrail + CurrentBar);
+						Print("Trail Tigger Long" + trailTriggerLong);
+						
+                    myTradeLong = false; //Sets bool back to false after Profit and Stop are set. This allows them to be moved around freely. 
+					
+                }
+
+                #endregion
+
+                #endregion
+            }
+
+            if (shortsOn)
+            {
+                #region Short Trade
+
+                if (
+				(Position.MarketPosition == MarketPosition.Flat) 
+//				&& (_patsIndicator.TrapShort[0].ApproxCompare(-1) == -0) 
+				&& (_patsIndicator.SignalShort[0].ApproxCompare(-2) == -0) 				
+				&& !(_patsIndicator.SignalLong[0].ApproxCompare(-1) == -0)
+				&& ((Time[1].TimeOfDay >= Start.TimeOfDay) && (Time[1].TimeOfDay <= End.TimeOfDay))
+				&& (BarsSinceExitExecution("SLS") > 1 || BarsSinceExitExecution("SLS") == -1) //Needs 1 candle to enter Short again after being stopped from a short position.
+                && (BarsSinceExitExecution("PTS") > 1 || BarsSinceExitExecution("PTS") == -1) //Needs 1 candle to enter Short again after hitting profit target from a shortposition.       
+
+				
+				&& ((UseBounceOnly) ? (signalEntryShort <= bounceEMA[0]) // last added line					
+//				&& (High[0] >= bounceEMA[0]) && (Low[0] < bounceEMA[0]) // bounce		
+				&& (Math.Max(High[1], High[0]) >= bounceEMA[0]) && (Low[0] < bounceEMA[0])
+				&& (distEmaToShortSignal <= DistEMAToSignal)
+				&& Low[0] < Low[1] - EntryOffSet * TickSize
+				&& (risk <= LimitRisk) : Close[0] > 0)
+					
+				&& ((OHLFilter) ? (Low[1] > CurrentDayOHL().CurrentLow[1] + 50 * TickSize) : Close[0] > 0)
+				&& ((UseFilterEMA) ? (bounceEMA[0] < filterEMA[0]) : Close[0] > 0)
+				&& ((IsEMARisingFalling) ? (bounceEMA[0] < bounceEMA[1]) : Close[0] > 0)
+				&& ((EntryOnlyAboveBelowEMA) ? (Close[0] < abovebelowEMA[0]) : Close[0] > 0)	
+				&& ((IsStochFilter) ? (StochasticsFast1.D[0] <= 100) && (StochasticsFast1.D[0] >= 30) : Close[0] > 0)
+				&& ((DistanceEMAFilter) ? (distBetween2Emas >= Dist2EMAs) : Close[0] > 0)
+				&& ((IsChopFilter) ? (Chop[0] <= 50)  : Close[0] > 0)
+				
+				&& ((All2Entries) ? 
+				(Position.MarketPosition == MarketPosition.Flat)  
+				&& (_patsIndicator.SignalShort[0].ApproxCompare(-2) == -0) 				
+				&& !(_patsIndicator.SignalLong[0].ApproxCompare(-1) == -0)
+				&& ((IsEMARisingFalling) ? (bounceEMA[0] < bounceEMA[1]) : Close[0] > 0)
+				&& ((EntryOnlyAboveBelowEMA) ? (Close[0] < abovebelowEMA[0]) : Close[0] > 0)
+				&& ((IsStochFilter) ? (StochasticsFast1.D[0] <= 100) && (StochasticsFast1.D[0] >= 30) : Close[0] > 0)
+				&& ((UseFilterEMA) ? (bounceEMA[0] < filterEMA[0]) : Close[0] > 0)
+				&& ((DistanceEMAFilter) ? (distBetween2Emas >= Dist2EMAs) : Close[0] > 0)
+				&& ((IsChopFilter) ? (Chop[0] <= 50)  : Close[0] > 0)
+				&& ((Time[1].TimeOfDay >= Start.TimeOfDay) && (Time[1].TimeOfDay <= End.TimeOfDay))
+				&& (BarsSinceExitExecution("SLS") > 1 || BarsSinceExitExecution("SLS") == -1) //Needs 1 candle to enter Short again after being stopped from a short position.
+                && (BarsSinceExitExecution("PTS") > 1 || BarsSinceExitExecution("PTS") == -1) : Close[0] > 0) 
+				&& (currentCount < X) && (dailyPnL > -DailyLossLimit) 
+                && (dailyPnL < DailyProfitLimit) 
+
+//				 
+				)
+                {
+                    EnterShort(PositionSize, "2ES"); //Enters Long with specified Position Size
+					current2ESell = true;
+                    myTradeShort = true; //This will allow Stop and Profit Targets to move around freely once bool is set to false
+					
+					if (SystemPrint)
+                    {                      
+                        Print("Entering Short: "  + " " + Time[1] + "- " + CurrentBar);
+						Print("Stop Level Short" + slShort[0] + " " + Time[1]);                      
+						Print("myTradeLong"+ myTradeLong  + CurrentBar);
+						Print("Current Risk : " + " " + risk);
+						Print("Stoch D value : " + " " +StochasticsFast1.D[0]);
+                       Print("Chop value : " + " " +Chop[0]);
+						Print("Distance between EMAs"+distBetween2Emas);
+                    }
+                }
+
+                #region Short Stop and Profit
+
+                if (Position.MarketPosition == MarketPosition.Short && myTradeShort == true)
+                {
+                    if (FixedStopLoss)
+                    {
+                        ExitShortStopMarket(0, true, Position.Quantity, StopLossTicks, "SLS", "2ES"); //Sets Stop for position quantity at specified point
+                    }
+					
+					if (DynamicStopLoss)
+						if (slMinMax2) {
+							ExitShortStopMarket(0, true, Position.Quantity, slShortMinMax[0], "SLS", "2ES"); 
+						}
+						else
+                    {
+                        ExitShortStopMarket(0, true, Position.Quantity, slShort[0], "SLS", "2ES"); //Sets Stop for position quantity at specified point
+                    }
+
+                    if (ProfitTarget)
+                    {
+                        ExitShortLimit(0, true, Position.Quantity, Position.AveragePrice - (TickSize * ProfitTargetTicks), "PT", "2ES"); //Sets Profit at (Ticks) below entry fill price
+                    }
+					
+					if (UseTPByATR)
+                    {
+                        ExitShortLimit(0, true, Position.Quantity, Position.AveragePrice - (TickSize * tpByATR), "PT", "2ES"); //Sets Profit at (Ticks) below entry fill price
+                    }
+
+                    breakevenTriggerShort = Position.AveragePrice - (TickSize * BreakevenTriggerAmount); //Define the target in which your Breakeven will trigger. (Fill Price - Ticks)
+                    myFreeBEShort = true; //Activates Breakeven. You will be a ble to move the stop around after it is set.
+
+
+                    trailTriggerShort = Position.AveragePrice - (TickSize * TrailTriggerAmount); //Define the target in which your trail stop will trigger. (Fill Price - Ticks)
+                    myFreeTrail = true; //Activates Trail Stop. You will be a ble to move the stop around after it is set.
+
+
+                    myTradeShort = false; //Sets bool back to false after Profit and Stop are set. This allows them to be moved around freely. 
+
+                }
+
+                #endregion
+
+                #endregion
+            }
+
+        }
+
+
+        protected override void OnMarketData(MarketDataEventArgs marketDataUpdate)
+        {
+            if (marketDataUpdate.MarketDataType == MarketDataType.Last)
+            {
+
+                #region Long Breakeven
+
+                if (SetBreakeven)
+                {
+                    if (
+                        (Position.MarketPosition == MarketPosition.Long) //Has to be in a long position
+                        && (marketDataUpdate.Price >= breakevenTriggerLong) //Price hits our breakeven trigger
+                        && (myFreeBELong == true) //BE bool is true -> Once its false, you can move your stop freely
+                        )
+                    {
+                        breakevenLong = Position.AveragePrice; //Define what a breakeven is. (We set it at the average filled price)
+                        ExitLongStopMarket(0, true, Position.Quantity, breakevenLong, "SLL", "2EL"); //Sets stop at area defined.
+                        myFreeBELong = false; //BE bool is false after setting stop. You can now move it around freely.
+                    }
+                }
+
+                #endregion
+
+                #region Short Breakeven
+
+                if (SetBreakeven)
+                {
+                    if (
+                       (Position.MarketPosition == MarketPosition.Short) //Has to be in a short position
+                           && (marketDataUpdate.Price <= breakevenTriggerShort) //Price hits our breakeven trigger
+                               && (myFreeBEShort == true) //BE bool is true -> Once its false, you can move your stop freely
+                       )
+                    {
+                        breakevenShort = Position.AveragePrice; //Define what a breakeven is. (We set it at the average filled price)
+                        ExitShortStopMarket(0, true, Position.Quantity, breakevenShort, "SLS", "2ES"); //Sets stop at area defined.
+                        myFreeBEShort = false; //BE bool is false after setting stop. You can now move it around freely.
+                    }
+                }
+
+                #endregion
+
+
+                #region Trail Stop
+
+                if (SetTrail)
+                {
+                    if (
+                        (myFreeTrail == true) //Bool needs to be true (Gets Reset with IsFirstTickOfBar to allow trail to occur on each new candle)
+
+                        //Has to be either short and past short Trail Trigger OR long and past long trail trigger
+                        && (((Position.MarketPosition == MarketPosition.Short) && (marketDataUpdate.Price <= trailTriggerShort))
+                        || ((Position.MarketPosition == MarketPosition.Long) && (marketDataUpdate.Price >= trailTriggerLong)))
+                        )
+                    {
+
+                        #region Trail Offset
+
+                        //Define the area where stop will be set			
+                        trailAreaLong = Low[1];
+                        trailAreaShort = High[1];
+						
+						//Add both of them together to define final entry point			
+                        trailLong = trailAreaLong - StopLossOffset * TickSize;
+                        trailShort = trailAreaShort + StopLossOffset * TickSize;
+
+
+                        #region Prints
+
+                        if (SystemPrint)
+                        {
+                            if (SystemPrint)
+                            {
+//                              
+
+                                Print("Trail Long Price is :  " + trailLong + " " + Time[1]);
+                                Print("Trail Short Price is :  " + trailShort + " " + Time[1]);
+
+                                Print("myFree Trail Offset " + myFreeTrail + " " + Time[1]);
+                            }
+
+                        }
+                        #endregion
+
+
+                        #endregion
+
+                        trailTriggeredCandle = true; //Allows condition to move stop freely. 
+                        myFreeTrail = false; //Sets bool back to false. Needs to wait another candle for calculations to happen again	
+
+
+                        if (SystemPrint)
+                        {
+                            if (SystemPrint)
+                            {
+                                Print("myFree Trail Offset After " + myFreeTrail + " " + Time[1]);
+                            }
+                        }
+
+
+                    }
+
+                    #region Long Short Trail Stop
+
+                    if (
+                    (Position.MarketPosition == MarketPosition.Long) //Needs to be in a long position
+                        && (trailTriggeredCandle) //Bool is true
+                            && (Low[1] > Low[2]) //Ensure the trail will only move up if the new candles low is higher.	
+                        )
+                    {
+                        ExitLongStopMarket(0, true, Position.Quantity, trailLong, "SLL", "2EL"); //Sets Stop
+
+                        trailTriggeredCandle = false; //You can move around trail stop freely until new candle.
+                    }
+
+                 
+
+                    if (
+                        (Position.MarketPosition == MarketPosition.Short) //Needs to be in a short position
+                            && (trailTriggeredCandle) //Bool is true
+                                && (High[1] < High[2]) //Ensure the trail will only move down if the new candles high is lower.
+                        )
+                    {
+                        ExitShortStopMarket(0, true, Position.Quantity, trailShort, "SLS", "2ES"); //Sets Stop
+
+                        trailTriggeredCandle = false; //You can move around trail stop freely until new candle.
+
+                    }
+                    #endregion
+                }
+
+                #endregion
+            }
+        }
+
+
+        //The next part below 'Button Click Event' is part of the buttons with links. Not part of this strategy 
+
+  
+			
+		#region Buttons
+
+        private void AddButtonToToolbar()
+        {
+            chartWindow = Window.GetWindow(ChartControl.Parent) as Chart;
+
+            if (chartWindow == null)
+            {
+                Print("chartWindow == null");
+                return;
+            }
+
+            Style btnStyle = new Style();
+		    btnStyle.TargetType = typeof(System.Windows.Controls.Button);
+
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.FontSizeProperty, 11.0));
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.FontFamilyProperty, new FontFamily("Arial")));
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.FontWeightProperty, FontWeights.Bold));
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.MarginProperty, new Thickness(2, 0, 2, 0)));
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.PaddingProperty, new Thickness(4, 2, 4, 2)));
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.ForegroundProperty, Brushes.WhiteSmoke));
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.BackgroundProperty, Brushes.Green));
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.IsEnabledProperty, true));
+            btnStyle.Setters.Add(new Setter(System.Windows.Controls.Button.HorizontalAlignmentProperty, HorizontalAlignment.Center));
+
+
+
+
+            btnLongsOn = new System.Windows.Controls.Button();
+            btnShortsOn = new System.Windows.Controls.Button();
+            btnCloseAll = new System.Windows.Controls.Button();
+
+            btnLongsOn.Content = "Longs On";
+            btnShortsOn.Content = "Shorts On";
+            btnCloseAll.Content = "Close All";
+
+            btnLongsOn.Style = btnStyle;
+            btnShortsOn.Style = btnStyle;
+            btnCloseAll.Style = btnStyle;
+
+
+            chartWindow.MainMenu.Add(btnLongsOn);
+            chartWindow.MainMenu.Add(btnShortsOn);
+            chartWindow.MainMenu.Add(btnCloseAll);
+
+            btnLongsOn.Visibility = Visibility.Visible;
+            btnShortsOn.Visibility = Visibility.Visible;
+            btnCloseAll.Visibility = Visibility.Visible;
+
+            btnLongsOn.Click += btnLongsOnClick;
+            btnShortsOn.Click += btnShortsOnClick;
+            btnCloseAll.Click += btnCloseAllClick;
+
+            btnLongsOn.Background = Brushes.Green;
+            btnCloseAll.Background = Brushes.Gray;
+
+            IsToolBarButtonAdded = true;
+        }
+
+        private void btnLongsOnClick(object sender, RoutedEventArgs e)
+        {
+            System.Windows.Controls.Button button = sender as System.Windows.Controls.Button;
+
+            if (button != null)
+            {
+                if (!longsOn)
+                {
+                    longsOn = true;
+                    btnLongsOn.Content = "Longs On";
+                    btnLongsOn.Background = Brushes.Green;
+                }
+                else
+                {
+                    longsOn = false;
+                    btnLongsOn.Content = "Longs Off";
+                    btnLongsOn.Background = Brushes.Gray;
+                }
+            }
+        }
+
+        private void btnShortsOnClick(object sender, RoutedEventArgs e)
+        {
+            System.Windows.Controls.Button button = sender as System.Windows.Controls.Button;
+
+            if (button != null)
+            {
+                if (!shortsOn)
+                {
+                    shortsOn = true;
+                    btnShortsOn.Content = "Shorts On";
+                    btnShortsOn.Background = Brushes.Green;
+                }
+                else
+                {
+                    shortsOn = false;
+                    btnShortsOn.Content = "Shorts Off";
+                    btnShortsOn.Background = Brushes.Gray;
+                }
+            }
+        }
+
+        private void btnCloseAllClick(object sender, RoutedEventArgs e)
+        {
+            System.Windows.Controls.Button button = sender as System.Windows.Controls.Button;
+
+            if (button != null)
+            {
+                var unused2 = Dispatcher.InvokeAsync(() =>
+                {
+                    if (Position.MarketPosition == MarketPosition.Long)
+                    {
+                        var unused1 = ExitLong();
+                    }
+                    else if (Position.MarketPosition == MarketPosition.Short)
+                    {
+                        var unused = ExitShort();
+                    }
+                });
+            }
+        }
+
+        private void DisposeCleanUp()
+        {
+            if (btnLongsOn != null)
+            {
+                var unused2 = chartWindow.MainMenu.Remove(btnLongsOn);
+            }
+
+            btnLongsOn.Click -= btnLongsOnClick;
+            if (btnShortsOn != null)
+            {
+                var unused1 = chartWindow.MainMenu.Remove(btnShortsOn);
+            }
+
+            btnShortsOn.Click -= btnShortsOnClick;
+            if (btnCloseAll != null)
+            {
+                var unused = chartWindow.MainMenu.Remove(btnCloseAll);
+            }
+
+            btnCloseAll.Click -= btnCloseAllClick;
+        }
+
+        #endregion
+
+        #region Properties
+
+		[NinjaScriptProperty]
+		[Display(Name="All 2 Entries",  Description = "Use All Second Entries", Order=0, GroupName="1.Entry Params")]
+		public bool All2Entries
+		{ get; set; }
+		
+		[NinjaScriptProperty]
+		[Display(Name="Bounce 2E Only",  Description = "Use Only Bounce 2Entries", Order=1, GroupName="1.Entry Params")]
+		public bool UseBounceOnly
+		{ get; set; }
+		
+		
+		[NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Bounce EMA", Description = "EMA For Bounce Trade", Order = 2, GroupName = "1.Entry Params")]
+        public int BounceEMAPeriod
+        { get; set; }
+		
+		[NinjaScriptProperty]
+		[Display(Name="Use Filter EMA", Order=3, GroupName="1.Entry Params")]
+		public bool UseFilterEMA
+		{ get; set; }		
+		
+		[NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Filter EMA", Description = "Filter for EMA For Bounce Trade", Order = 4, GroupName = "1.Entry Params")]
+        public int FilterEMAPeriod
+        { get; set; }
+		
+		[NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "LimitRisk", Description = "Risk in Points Previous Bar H - L", Order = 5, GroupName = "1.Entry Params")]
+        public double LimitRisk
+        { get; set; }
+		
+		[NinjaScriptProperty]
+		[Range(1, int.MaxValue)]
+		[Display(Name="Distance EMA to Signal", Description="Max Distance From EMA to Signal", Order=6, GroupName="1.Entry Params")]
+		public int DistEMAToSignal
+		{ get; set; }
+		
+		
+		
+
+        #endregion
+		
+
+        #region 2. Order Management
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Position Size", Order = 0, GroupName = "2. Order Management")]
+        public int PositionSize
+        { get; set; }
+		
+		[NinjaScriptProperty]
+		[Display(Name="Set Take Profit By ATR", Description="Recommended", Order=1, GroupName="2. Order Management")]
+		public bool UseTPByATR
+		{ get; set; }
+        
+		[NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "ATR Period", Description = "ATR Period", Order = 2, GroupName = "2. Order Management")]
+        public int ATRPeriod
+        { get; set; }		
+		
+        [NinjaScriptProperty]
+        [Display(Name = "Set Fixed Stop Loss", Order = 3, GroupName = "2. Order Management")]
+        public bool FixedStopLoss
+        { get; set; }
+		
+		[NinjaScriptProperty]
+        [Display(Name = "Fixed StopLoss Ticks", Order = 4, GroupName = "2. Order Management")]
+        public int StopLossTicks
+        { get; set; }
+		
+		[NinjaScriptProperty]
+        [Display(Name = "Set Dynamic Stop Loss", Description = "Uses L H of previous bar", Order = 5, GroupName = "2. Order Management")]
+        public bool DynamicStopLoss
+        { get; set; }
+		
+		[NinjaScriptProperty]
+        [Display(Name = "SL Min Max 2", Description = "Lowest of highest of the 2 bars", Order = 6, GroupName = "2. Order Management")]
+        public bool slMinMax2
+        { get; set; }
+		
+		
+		
+		[NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "SL Offset", Description = "Offset SL In X ticks for Dynamic SL", Order = 7, GroupName = "2. Order Management")]
+        public int StopLossOffset
+        { get; set; }
+		
+		[NinjaScriptProperty]
+        [Display(Name = "Fixed Profit Target", Order = 8, GroupName = "2. Order Management")]
+        public bool ProfitTarget
+        { get; set; }
+		
+		[NinjaScriptProperty]
+        [Display(Name = "Profit Target Ticks", Order = 9, GroupName = "2. Order Management")]
+        public int ProfitTargetTicks
+        { get; set; }
+						
+		[NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Entry Offset", Description = "Offset Enty In X ticks", Order = 10, GroupName = "2. Order Management")]
+        public int EntryOffSet
+        { get; set; }
+	
+        #endregion
+
+        #region 4. Breakeven And Trail
+
+        [NinjaScriptProperty]
+        [Display(Name = "Set Breakeven", Order = 1, GroupName = "4. Breakeven And Trail")]
+        public bool SetBreakeven
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Breakeven Trigger Amount", Order = 2, GroupName = "4. Breakeven And Trail")]
+        public int BreakevenTriggerAmount
+        { get; set; }
+
+       
+
+        [NinjaScriptProperty]
+        [Display(Name = "Set Trail", Order = 0, GroupName = "4. Breakeven And Trail")]
+        public bool SetTrail
+        { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail TriggerAmount", Order = 1, GroupName = "4. Breakeven And Trail")]
+        public int TrailTriggerAmount
+        { get; set; }
+		
+		[NinjaScriptProperty]
+        [Display(Name = "Tick Offset Trail", Order = 2, GroupName = "4. Breakeven And Trail")]
+        public int TickOffsetTrail
+        { get; set; }
+
+        #endregion
+
+        #region 5.Filters
+		[NinjaScriptProperty]
+		[Display(Name="OHL Filter", Order=1, GroupName="5. Filters")]
+		public bool OHLFilter
+		{ get; set; }	
+		
+		[NinjaScriptProperty]
+		[Display(Name="Is EMA Rising Falling", Order=2, GroupName="5. Filters")]
+		public bool IsEMARisingFalling
+		{ get; set; }	
+		
+		[NinjaScriptProperty]
+		[Display(Name="Stoch Filter", Order=3, GroupName="5. Filters")]
+		public bool IsStochFilter
+		{ get; set; }	
+		
+		[NinjaScriptProperty]
+		[Display(Name="Chop Filter", Order=4, GroupName="5. Filters")]
+		public bool IsChopFilter
+		{ get; set; }
+		
+		[NinjaScriptProperty]
+		[Display(Name="Distance EMA Filter", Description = "Min Distance In Ticks Between Two EMAs Filter", Order=5, GroupName="5. Filters")]
+		public bool DistanceEMAFilter
+		{ get; set; }
+		
+		[NinjaScriptProperty]
+        [Display(Name = "Distance 2 EMAs", Order = 6, Description = "DIstance between Bounce and Filter EMA in Points",GroupName = "5. Filters")]
+        public int Dist2EMAs
+        { get; set; }
+		
+		[NinjaScriptProperty]
+		[Display(Name="Above Below Only EMA ", Description = "Open Only Above/Below EMA Filter", Order=7, GroupName="5. Filters")]
+		public bool EntryOnlyAboveBelowEMA
+		{ get; set; }
+		
+		[NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "AboveBelow EMA Period", Description = "Open only above below EMA", Order = 8, GroupName = "5. Filters")]
+        public int AboveBelowEMAPeriod
+        { get; set; }
+		
+		[NinjaScriptProperty]
+		[Display(Name="Risk Bar Filter", Description = "Used with Tick bars define max ticks to take risk",Order=9, GroupName="5. Filters")]
+		public bool BarRisk
+		{ get; set; }
+		
+		#endregion
+
+        #region 7. Trade Management
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "Start Time", Order = 0, GroupName = "7. Trade Management")]
+        public DateTime Start
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "End Time", Order = 1, GroupName = "7. Trade Management")]
+        public DateTime End
+        { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "Daily Profit Limit", Order = 2, GroupName = "7. Trade Management")]
+        public double DailyProfitLimit
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Daily Loss Limit", Order = 3, GroupName = "7. Trade Management")]
+        public double DailyLossLimit
+        { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Max Trade Count", Description = "How Many Trades System will Enter", Order = 4, GroupName = "7. Trade Management")]
+        public int X
+        { get; set; }
+
+        #endregion
+
+        
+
+        #region 9.Version
+
+        [NinjaScriptProperty]
+        [ReadOnly(true)]
+        [Display(Name = "Author", GroupName = "9.Version", Order = 3)]
+        public string Author
+        {
+            get { return author; }
+            set { author = (value); }
+        }
+
+        [NinjaScriptProperty]
+        [ReadOnly(true)]
+        [Display(Name = "Version", GroupName = "9.Version", Order = 4)]
+        public string Version
+        {
+            get { return version; }
+            set { version = (value); }
+        }
+
+		 [NinjaScriptProperty]
+        [Display(Name = "SystemPrint", Order = 1, GroupName = "9.Version")]
+        public bool SystemPrint
+        { get; set; }
+
+        #endregion
+
+     
+
+		
+		
+    }
+}
